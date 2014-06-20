@@ -59,7 +59,8 @@ void MainWindow::openImages()
             QImage* image = new QImage;
             if (image->load(iter))
             {
-                convertToGrayscale(*image);
+                //convertToGrayscale(*image);
+                *image = image->convertToFormat(QImage::Format_RGB32);
                 if (i == 0)
                     pixelCount = image->byteCount();
 
@@ -90,7 +91,7 @@ void MainWindow::play()
 void MainWindow::recognize()
 {
     substractBackground();
-    applyMasks();
+    //applyMasks();
     foreach (QImage* iter, imageList)
     {
         delete iter;
@@ -116,7 +117,7 @@ void MainWindow::spinSigmaMinChanged(double newValue)
 void MainWindow::playImages(QList<QImage*>& pixmap)
 {
     QProgressDialog progress("воспроизведение", "Остановить", 0, pixmap.size(), this);
-    progress.setWindowModality(Qt::WindowModal);
+    //progress.setWindowModality(Qt::WindowModal);
     progress.setValue(0);
     progress.open();
     int i = 0;
@@ -158,7 +159,7 @@ void MainWindow::learn()
         QImage* image = imageList.at(ui->listItem->row(iter));
 
         // Добавление точек
-        uchar* pixel = image->bits();
+        QRgb* pixel = (QRgb*)image->bits();
         for (int j = 0; j < pixelCount; j++, pixel++)
             backg[j]->addItem(*pixel);
 
@@ -171,9 +172,81 @@ void MainWindow::learn()
 
 void MainWindow::substractBackground()
 {
-    fillBackg();
+    if (backg.size() == 0)
+    {
+        return;
+    }
 
     QImage* firstFrame = imageList.first();
+
+    QVector<QRgb> maskColorTable;
+    maskColorTable << 0xFF000000;
+    maskColorTable << 0xFFFFFFFF;
+
+    int width = firstFrame->width();
+    int height= firstFrame->height();
+
+    QImage* mask = new QImage(width, height, QImage::Format_Indexed8);
+    mask->setColorTable(maskColorTable);
+    mask->fill(0);
+
+    foreach (QImage* iter, masks) {
+        delete iter;
+    }
+    masks.clear();
+    masks.reserve(imageList.size());
+
+    QProgressDialog progress("Вычитание фона", "Остановить", 0, imageList.size(), this);
+    progress.setWindowTitle("Распознование");
+    progress.setWindowModality(Qt::WindowModal);
+    progress.setValue(0);
+
+    int prog = 1;
+    QList<QImage*>::iterator image = imageList.begin();
+    image++;
+
+    masks << mask;
+
+    /*QImage* blackDisk = disk(3, 0xFF000000);
+    QImage* whiteDisk = disk(3, 0xFF000000);*/
+
+    for (; image != imageList.end(); image++)
+    {
+        progress.setValue(prog++);
+
+        mask = new QImage(width, height, QImage::Format_Indexed8);
+        mask->setColorTable(maskColorTable);
+
+        uchar* imagePixel = (*image)->bits();
+        uchar* maskPixel = mask->bits();
+
+        for (int i = 0; i < pixelCount; i++, imagePixel++, maskPixel++)
+        {
+            *maskPixel = (backg[i]->isBackground(*imagePixel)) ? 0 : 1;
+        }
+
+        //dilation(mask, *blackDisk, 0xFF000000, 0xFFFFFFFF);
+        //dilation(mask, *whiteDisk, 0xFFFFFFFF, 0xFF000000);
+
+        ui->imageView->setPixmap(QPixmap::fromImage(*mask));
+        //QMessageBox(QMessageBox::NoIcon, "Отладка", QString("%1 %2").arg(j).arg(d_max)).exec();
+
+        masks << mask;
+
+        if (progress.wasCanceled())
+            break;
+    }
+
+    return;
+
+    //delete blackDisk;
+    //delete whiteDisk;
+}
+
+void MainWindow::substractBackground2()
+{
+    /*QImage* firstFrame = imageList.first();
+    fillBackg(firstFrame->byteCount());
 
     // Начальное заполнение гауссианов
     uchar* pixel = firstFrame->bits();
@@ -212,17 +285,18 @@ void MainWindow::substractBackground()
 
     masks << mask;
 
-    QImage* blackDisk = disk(3, 0xFF000000);
-    QImage* whiteDisk = disk(3, 0xFF000000);
+    float sigmamin2 = sigmamin * sigmamin;
 
-    /*
+    //*QImage* blackDisk = disk(3, 0xFF000000);
+    QImage* whiteDisk = disk(3, 0xFF000000);///*
+
+    ////*
     for (int i = 0; i < pixelCount; i++)
     {
         backg[i]->sigmamin = ui->spinSigmaMax->value();
         backg[i]->finalize();
     }
-    */
-
+    ///*
     for (; image != imageList.end(); image++)
     {
         progress.setValue(prog++);
@@ -234,10 +308,36 @@ void MainWindow::substractBackground()
         uchar* maskPixel = mask->bits();
 
         for (int i = 0; i < pixelCount; i++, imagePixel++, maskPixel++)
+        {
+            /*float d = (*imagePixel - backg[i]->mu);
+            d *= d;
+
+            if (d > k*(backg[i]->sigma_2))
+            {
+                // Передний план
+                *maskPixel = 1;
+            }
+            else
+            {
+                // Фон
+                *maskPixel = 0;
+                backg[i]->mu      = rho * (*pixel) + (1 + rho) * backg[i]->mu;
+                float tmp         = *pixel - backg[i]->mu;
+                backg[i]->sigma_2 = rho * tmp*tmp  + (1 + rho) * backg[i]->sigma_2;
+                if (backg[i]->sigma_2 < sigmamin2)
+                    backg[i]->sigma_2 = sigmamin2;
+
+                backg[i]->sigma_sqrt_1= 1. / sqrt(backg[i]->sigma_2);
+            }//
+
             *maskPixel = (backg[i]->isBackground(*imagePixel)) ? 0 : 1;
+        }
 
         //dilation(mask, *blackDisk, 0xFF000000, 0xFFFFFFFF);
         //dilation(mask, *whiteDisk, 0xFFFFFFFF, 0xFF000000);
+
+        ui->imageView->setPixmap(QPixmap::fromImage(*mask));
+        //QMessageBox(QMessageBox::NoIcon, "Отладка", QString("%1 %2").arg(j).arg(d_max)).exec();
 
         masks << mask;
 
@@ -245,8 +345,10 @@ void MainWindow::substractBackground()
             break;
     }
 
-    delete blackDisk;
-    delete whiteDisk;
+    return;
+
+    //delete blackDisk;
+    //delete whiteDisk;*/
 }
 
 void MainWindow::applyMasks()
@@ -421,7 +523,13 @@ void MainWindow::convertToGrayscale(QImage &image)
     uchar* grayPixel =        grayImage.bits();
 
     for (int i = 0; i < grayImage.byteCount(); i++, origPixel++, grayPixel++)
-        *grayPixel = qGray(*origPixel);
+    {
+        int R, G, B;
+        R = G = B = *origPixel;
+        R >>= 16; G >>= 8;
+        R = R & 0xFF; R = R & 0xFF; R = R & 0xFF;
+    //    *grayPixel = qGray(*origPixel);
+    }
 
     image = grayImage;
 }
@@ -437,24 +545,31 @@ Gaussian::Gaussian(float _sirmamin)
     isNotFinalized = true;
 }
 
-__fastcall void Gaussian::addItem(uchar x)
+void Gaussian::addItem(QRgb x_)
 {
+    RgbColor x;
+    x.B = x_ & 0xFF;
+    x_ >>= 8;
+    x.G = x_ & 0xFF;
+    x_ >>= 8;
+    x.R = x_ & 0xFF;
+
     points << x;
     isNotFinalized = true;
 }
 
-__fastcall float Gaussian::p(uchar x)
+float Gaussian::p(uchar x)
 {
-    float expPower = (float)x - mu;
+    /*float expPower = (float)x - mu;
     expPower *= expPower * sigma_2;
     expPower = (float)exp((double)expPower);
 
     static float coef = 1. / sqrt(2* M_PI);
 
-    return coef * expPower * sigma_sqrt_1;
+    return coef * expPower * sigma_sqrt_1;*/
 }
 
-__fastcall bool Gaussian::isBackground(uchar x)
+bool Gaussian::isBackground(QRgb x_)
 {
     if (isNotFinalized)
         finalize();
@@ -464,37 +579,86 @@ __fastcall bool Gaussian::isBackground(uchar x)
         return -1;
     }
 
-    float res = (float)x - mu;
+    RgbColor x;
+    x.B = x_ & 0xFF;
+    x_ >>= 8;
+    x.G = x_ & 0xFF;
+    x_ >>= 8;
+    x.R = x_ & 0xFF;
 
-    return (res < sigma_k && res > -sigma_k) ? true : false;
+    float res = ((float)x.R - mu.Rf) * ((float)x.G - mu.Gf) * ((float)x.B - mu.Bf);
+
+    return (res < detSqrt && res > -detSqrt) ? true : false;
 }
 
 void Gaussian::finalize()
 {
-    float sigmamin2 = sigmamin * sigmamin;
+    memset(&mu, 0, sizeof(mu));
+    memset(&sigma, 0, sizeof(sigma));
 
-    unsigned int sumI = 0;
     int size = points.size();
 
-    foreach (uchar iter, points) {
-        sumI += iter;
+    foreach (RgbColor iter, points) {
+        mu.Rf += iter.R;
+        mu.Gf += iter.G;
+        mu.Bf += iter.B;
+
+        sigma[0][0] += iter.R * iter.R;
+        sigma[0][1] += iter.R * iter.G;
+        sigma[0][2] += iter.R * iter.B;
+
+        sigma[1][1] += iter.G * iter.G;
+        sigma[1][2] += iter.G * iter.B;
+
+        sigma[2][2] += iter.B * iter.B;
     }
-    mu = (float)sumI / size;
 
-    float sumF = 0, tmp;
-    foreach (uchar iter, points) {
-        tmp = (float)iter - mu;
-        sumF += tmp * tmp;
-    }
+    mu.Rf /= size; mu.Gf /= size; mu.Bf /= size;
 
-    sigma = sumF / size;
-    if (sigma < sigmamin2)
-        sigma = sigmamin2;
+    sigma[0][0] /= size; sigma[0][1] /= size; sigma[0][2] /= size;
+                         sigma[1][1] /= size; sigma[1][2] /= size;
+                                              sigma[2][2] /= size;
 
-    sigma_2 = -0.5 / sigma;  // коэффициент экспоненты
-    sigma   = sqrt(sigma);
+    // - Средние
+    sigma[0][0] -= (mu.Rf * mu.Rf);
+    sigma[0][1] -= (mu.Rf * mu.Gf);
+    sigma[0][2] -= (mu.Rf * mu.Bf);
 
-    sigma_k = k * sigma;
+    sigma[1][1] -= (mu.Gf * mu.Gf);
+    sigma[1][2] -= (mu.Gf * mu.Bf);
+
+    sigma[2][2] -= (mu.Bf * mu.Bf);
+
+    // Копируем верхний триугольник на нижний триугольник
+    sigma[1][0] = sigma[0][1];
+    sigma[2][0] = sigma[0][2]; sigma[2][1] = sigma[1][2];
+
+    if (sigma[0][0] < sigmamin)
+        sigma[0][0] += sigmamin;
+    if (sigma[1][1] < sigmamin)
+        sigma[1][2] += sigmamin;
+    if (sigma[2][2] < sigmamin)
+        sigma[2][2] += sigmamin;
+
+    inver[0][0] = sigma[1][1] * sigma[2][2] - sigma[1][2] * sigma[2][1];
+    inver[1][0] = sigma[1][2] * sigma[2][0] - sigma[1][0] * sigma[2][2];
+    inver[2][0] = sigma[1][0] * sigma[2][1] - sigma[1][1] * sigma[2][0];
+
+    inver[0][1] = inver[1][0];
+    inver[1][1] = sigma[0][0] * sigma[2][2] - sigma[0][2] * sigma[2][0];
+    inver[2][1] = sigma[0][1] * sigma[2][0] - sigma[0][0] * sigma[2][1];
+
+    inver[0][2] = inver[2][0];
+    inver[1][2] = inver[2][1];
+    inver[2][2] = sigma[0][0] * sigma[1][1] - sigma[0][1] * sigma[1][0];
+
+    det = sigma[0][0] * inver[0][0] + sigma[0][1] * inver[0][1]
+        + sigma[0][2] * inver[0][2];
+
+    if (det < 0)
+        det = -det;
+
+    detSqrt = sqrt(det);
 
     isNotFinalized = false;
 }

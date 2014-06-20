@@ -7,8 +7,19 @@
 
 #include "morphology.h"
 
-#define dmax 10
-const qint64 fps = 40;
+#define k 3
+#define rho 0.01
+const qint64 fps = 20;
+
+struct RgbColor
+{
+    unsigned int R, G, B;
+};
+
+struct RgbColorF
+{
+    float Rf, Gf, Bf;
+};
 
 namespace Ui {
 class MainWindow;
@@ -17,10 +28,10 @@ class MainWindow;
 class Gaussian
 {
 private:
-#define k 3
-    float sigma;
+    float sigma[3][3];
+    float inver[3][3];
     float sigma_k;
-    QVector<uchar> points;
+    QVector<RgbColor> points;
 
     bool isNotFinalized;
     // http://ru.wikipedia.org/wiki/%D0%9D%D0%BE%D1%80%D0%BC%D0%B0%D0%BB%D1%8C%D0%BD%D0%BE%D0%B5_%D1%80%D0%B0%D1%81%D0%BF%D1%80%D0%B5%D0%B4%D0%B5%D0%BB%D0%B5%D0%BD%D0%B8%D0%B5
@@ -29,18 +40,17 @@ private:
 public:
     float sigmamin;
 
-    float mu;
+    RgbColorF mu;
+    float det;
+    float detSqrt;
 
-    float sigma_2;
-    float sigma_sqrt_1;
-
-    Gaussian(float _sirmamin);
+    Gaussian(float _sirmamin = 5);
 
     void finalize();
-    __fastcall void addItem(uchar x);
+    void addItem(QRgb x_);
 
-    __fastcall float p(uchar x);
-    __fastcall bool isBackground(uchar x);
+    float p(uchar x);
+    bool isBackground(QRgb x_);
 };
 
 class MainWindow : public QMainWindow
@@ -65,7 +75,9 @@ public slots:
 public:
     void playImages(QList<QImage*>& pixmap);
     void substractBackground();
+    void substractBackground2();
     void applyMasks();
+
 
 private:
     Ui::MainWindow *ui;
