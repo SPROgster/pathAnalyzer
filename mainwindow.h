@@ -31,7 +31,7 @@ private:
     float sigma[3][3];
     float inver[3][3];
     float sigma_k;
-    QVector<RgbColor> points;
+    QList<RgbColor> points;
 
     bool isNotFinalized;
     // http://ru.wikipedia.org/wiki/%D0%9D%D0%BE%D1%80%D0%BC%D0%B0%D0%BB%D1%8C%D0%BD%D0%BE%D0%B5_%D1%80%D0%B0%D1%81%D0%BF%D1%80%D0%B5%D0%B4%D0%B5%D0%BB%D0%B5%D0%BD%D0%B8%D0%B5
@@ -43,6 +43,7 @@ public:
     RgbColorF mu;
     float det;
     float detSqrt;
+    float det3Rt;
 
     Gaussian(float _sirmamin = 5);
 

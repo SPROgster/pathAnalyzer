@@ -62,7 +62,7 @@ void MainWindow::openImages()
                 //convertToGrayscale(*image);
                 *image = image->convertToFormat(QImage::Format_RGB32);
                 if (i == 0)
-                    pixelCount = image->byteCount();
+                    pixelCount = image->byteCount() / 4;
 
                 QListWidgetItem *newItem = new QListWidgetItem;
                 newItem->setText(QString("frame %1").arg(i));
@@ -91,7 +91,7 @@ void MainWindow::play()
 void MainWindow::recognize()
 {
     substractBackground();
-    //applyMasks();
+    applyMasks();
     foreach (QImage* iter, imageList)
     {
         delete iter;
@@ -168,6 +168,8 @@ void MainWindow::learn()
     }
     for (int j = 0; j < pixelCount; j++)
         backg[j]->finalize();
+
+    QMessageBox(QMessageBox::Information, "Обучение", "Обучение завершено").exec();
 }
 
 void MainWindow::substractBackground()
@@ -586,9 +588,17 @@ bool Gaussian::isBackground(QRgb x_)
     x_ >>= 8;
     x.R = x_ & 0xFF;
 
-    float res = ((float)x.R - mu.Rf) * ((float)x.G - mu.Gf) * ((float)x.B - mu.Bf);
+    float x_mu[3];
+    x_mu[0] = (float)x.R - mu.Rf;
+    x_mu[1] = (float)x.G - mu.Gf;
+    x_mu[2] = (float)x.B - mu.Bf;
 
-    return (res < detSqrt && res > -detSqrt) ? true : false;
+    double expPower = x_mu[0] * (inver[0][0] * x_mu[0] + inver[0][1] * x_mu[1] + inver[0][2] * x_mu[2])
+                    + x_mu[1] * (inver[1][0] * x_mu[0] + inver[1][1] * x_mu[1] + inver[1][2] * x_mu[2])
+                    + x_mu[2] * (inver[2][0] * x_mu[0] + inver[2][1] * x_mu[1] + inver[2][2] * x_mu[2]);
+    expPower = sqrt(expPower);
+
+    return (expPower < k * k * k * det3Rt) ? true : false;
 }
 
 void Gaussian::finalize()
@@ -636,7 +646,7 @@ void Gaussian::finalize()
     if (sigma[0][0] < sigmamin)
         sigma[0][0] += sigmamin;
     if (sigma[1][1] < sigmamin)
-        sigma[1][2] += sigmamin;
+        sigma[1][1] += sigmamin;
     if (sigma[2][2] < sigmamin)
         sigma[2][2] += sigmamin;
 
@@ -644,19 +654,25 @@ void Gaussian::finalize()
     inver[1][0] = sigma[1][2] * sigma[2][0] - sigma[1][0] * sigma[2][2];
     inver[2][0] = sigma[1][0] * sigma[2][1] - sigma[1][1] * sigma[2][0];
 
-    inver[0][1] = inver[1][0];
     inver[1][1] = sigma[0][0] * sigma[2][2] - sigma[0][2] * sigma[2][0];
     inver[2][1] = sigma[0][1] * sigma[2][0] - sigma[0][0] * sigma[2][1];
 
-    inver[0][2] = inver[2][0];
-    inver[1][2] = inver[2][1];
     inver[2][2] = sigma[0][0] * sigma[1][1] - sigma[0][1] * sigma[1][0];
 
     det = sigma[0][0] * inver[0][0] + sigma[0][1] * inver[0][1]
         + sigma[0][2] * inver[0][2];
 
+    inver[0][0] /= det; inver[1][0] /= det; inver[2][0] /= det;
+                        inver[1][1] /= det; inver[2][1] /= det;
+                                            inver[2][2] /= det;
+
+    inver[0][1] = inver[1][0];
+    inver[0][2] = inver[2][0]; inver[1][2] = inver[2][1];
+
     if (det < 0)
         det = -det;
+
+    det3Rt = exp(1./3 * log(det));
 
     detSqrt = sqrt(det);
 
