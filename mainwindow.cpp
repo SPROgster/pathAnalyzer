@@ -541,8 +541,8 @@ void MainWindow::convertToGrayscale(QImage &image)
 ///
 /////////////////////////////////////////////////////////////////////////////////
 
-Gaussian::Gaussian(float _sirmamin, bool hsv) :
-    usingHsv(hsv)
+Gaussian::Gaussian(float _sirmamin, bool fullMatrix, bool hsv) :
+    usingFullMastrix(fullMatrix), usingHsv(hsv)
 {
     sigmamin = _sirmamin;
     isNotFinalized = true;
@@ -580,6 +580,7 @@ float Gaussian::p(uchar x)
     static float coef = 1. / sqrt(2* M_PI);
 
     return coef * expPower * sigma_sqrt_1;*/
+    return 0;
 }
 
 bool Gaussian::isBackground(QRgb x_)
@@ -622,9 +623,24 @@ bool Gaussian::isBackground(QRgb x_)
     if (x_mu[2] < 0)
         x_mu[2] = -x_mu[2];
 
-    double expPower = x_mu[0] + x_mu[1] + x_mu[2];
+    double expPower;
+    if (usingFullMastrix)
+    {
+        expPower = x_mu[0] * (inver[0][0] * x_mu[0] + inver[0][1] * x_mu[1] + inver[0][2] * x_mu[2])
+                 + x_mu[1] * (inver[1][0] * x_mu[0] + inver[1][1] * x_mu[1] + inver[1][2] * x_mu[2])
+                 + x_mu[2] * (inver[2][0] * x_mu[0] + inver[2][1] * x_mu[1] + inver[2][2] * x_mu[2]);
+                    //(x - mu) * inv * (x - mu) * 0.5;
+        if (expPower < 0)
+            expPower = -expPower;
 
-    return (expPower < k * k * k * detSqrt) ? true : false;
+        expPower = sqrt(expPower);
+    }
+    else
+    {
+        expPower = x_mu[0] + x_mu[1] + x_mu[2];
+        expPower /= detSqrt;
+    }
+    return (expPower < k * k * k) ? true : false;
 }
 
 void Gaussian::finalize()
@@ -641,12 +657,34 @@ void Gaussian::finalize()
     }
     mu.Rf /= size; mu.Gf /= size; mu.Bf /= size;
 
-    foreach (RgbColor iter, points) {
-        sigma[0][0] += (iter.R - mu.Rf) * (iter.R - mu.Rf);
-        sigma[1][1] += (iter.G - mu.Gf) * (iter.G - mu.Gf);
-        sigma[2][2] += (iter.B - mu.Bf) * (iter.B - mu.Bf);
+    if (usingFullMastrix)
+    {
+        foreach (RgbColor iter, points) {
+            sigma[0][0] += (iter.R - mu.Rf) * (iter.R - mu.Rf);
+            sigma[0][1] += (iter.R - mu.Rf) * (iter.G - mu.Gf);
+            sigma[0][2] += (iter.R - mu.Rf) * (iter.B - mu.Bf);
+
+            sigma[1][1] += (iter.G - mu.Gf) * (iter.G - mu.Gf);
+            sigma[1][2] += (iter.G - mu.Gf) * (iter.B - mu.Bf);
+
+            sigma[2][2] += (iter.B - mu.Bf) * (iter.B - mu.Bf);
+        }
+        sigma[0][0] /= size; sigma[0][1] /= size; sigma[0][2] /= size;
+                             sigma[1][1] /= size; sigma[1][2] /= size;
+                                                  sigma[2][2] /= size;
+
+        sigma[1][0] = sigma[0][1];
+        sigma[2][0] = sigma[0][2]; sigma[2][1] = sigma[1][2];
     }
-    sigma[0][0] /= size; sigma[1][1] /= size; sigma[2][2] /= size;
+    else
+    {
+        foreach (RgbColor iter, points) {
+            sigma[0][0] += (iter.R - mu.Rf) * (iter.R - mu.Rf);
+            sigma[1][1] += (iter.G - mu.Gf) * (iter.G - mu.Gf);
+            sigma[2][2] += (iter.B - mu.Bf) * (iter.B - mu.Bf);
+        }
+        sigma[0][0] /= size; sigma[1][1] /= size; sigma[2][2] /= size;
+    }
 
     if (sigma[0][0] < sigmamin)
         sigma[0][0] = sigmamin;
@@ -655,10 +693,39 @@ void Gaussian::finalize()
     if (sigma[2][2] < sigmamin)
         sigma[2][2] = sigmamin;
 
-    inver[0][0] = 1. / sigma[0][0]; inver[1][1] = 1. / sigma[1][1]; inver[2][2] = 1. / sigma[2][2];
+    if (usingFullMastrix)
+    {
+        inver[0][0] = sigma[1][1] * sigma[2][2] - sigma[1][2] * sigma[2][1];
+        inver[1][0] = sigma[1][2] * sigma[2][0] - sigma[1][0] * sigma[2][2];
+        inver[2][0] = sigma[1][0] * sigma[2][1] - sigma[1][1] * sigma[2][0];
 
-    det = sigma[0][0] + sigma[1][1] + sigma[2][2];
-    detSqrt = sqrt(det);
+        inver[0][1] = inver[1][0];
+        inver[1][1] = sigma[0][0] * sigma[2][2] - sigma[0][2] * sigma[2][0];
+        inver[2][1] = sigma[0][1] * sigma[2][0] - sigma[0][0] * sigma[2][1];
+
+        inver[0][2] = inver[2][0];
+        inver[1][2] = inver[2][1];
+        inver[2][2] = sigma[0][0] * sigma[1][1] - sigma[0][1] * sigma[1][0];
+
+        det = sigma[0][0] * inver[0][0] + sigma[0][1] * inver[0][1]
+            + sigma[0][2] * inver[0][2];
+
+        if (det < 0)
+            detSqrt = sqrt(-det);
+        else
+            detSqrt = sqrt(det);
+
+        inver[0][0] /= det;        inver[0][1] /= det;        inver[0][2] /= det;
+        inver[1][0] = inver[0][1]; inver[1][1] /= det;        inver[1][2] /= det;
+        inver[2][0] = inver[0][2]; inver[2][1] = inver[1][2]; inver[2][2] /= det;
+    }
+    else
+    {
+        inver[0][0] = 1. / sigma[0][0]; inver[1][1] = 1. / sigma[1][1]; inver[2][2] = 1. / sigma[2][2];
+
+        det = sigma[0][0] + sigma[1][1] + sigma[2][2];
+        detSqrt = sqrt(det);
+    }
 
     isNotFinalized = false;
 }
