@@ -219,7 +219,7 @@ void MainWindow::substractBackground()
         mask = new QImage(width, height, QImage::Format_Indexed8);
         mask->setColorTable(maskColorTable);
 
-        uchar* imagePixel = (*image)->bits();
+        QRgb* imagePixel = (QRgb*)(*image)->bits();
         uchar* maskPixel = mask->bits();
 
         for (int i = 0; i < pixelCount; i++, imagePixel++, maskPixel++)
@@ -541,7 +541,8 @@ void MainWindow::convertToGrayscale(QImage &image)
 ///
 /////////////////////////////////////////////////////////////////////////////////
 
-Gaussian::Gaussian(float _sirmamin)
+Gaussian::Gaussian(float _sirmamin, bool hsv) :
+    usingHsv(hsv)
 {
     sigmamin = _sirmamin;
     isNotFinalized = true;
@@ -550,12 +551,22 @@ Gaussian::Gaussian(float _sirmamin)
 void Gaussian::addItem(QRgb x_)
 {
     RgbColor x;
-    x.B = x_ & 0xFF;
-    x_ >>= 8;
-    x.G = x_ & 0xFF;
-    x_ >>= 8;
-    x.R = x_ & 0xFF;
+    if (usingHsv)
+    {
+        QColor hsv(x_);
 
+        x.R = hsv.hsvHue();
+        x.G = hsv.hsvSaturation();
+        x.B = hsv.value();
+    }
+    else
+    {
+        x.B = x_ & 0xFF;
+        x_ >>= 8;
+        x.G = x_ & 0xFF;
+        x_ >>= 8;
+        x.R = x_ & 0xFF;
+    }
     points << x;
     isNotFinalized = true;
 }
@@ -582,23 +593,38 @@ bool Gaussian::isBackground(QRgb x_)
     }
 
     RgbColor x;
-    x.B = x_ & 0xFF;
-    x_ >>= 8;
-    x.G = x_ & 0xFF;
-    x_ >>= 8;
-    x.R = x_ & 0xFF;
+    if (usingHsv)
+    {
+        QColor hsv(x_);
+        x.R = hsv.hslHue();
+        x.G = hsv.hslSaturation();
+        x.B = hsv.value();
+    }
+    else
+    {
+        x.B = x_ & 0xFF;
+        x_ >>= 8;
+        x.G = x_ & 0xFF;
+        x_ >>= 8;
+        x.R = x_ & 0xFF;
+    }
 
     float x_mu[3];
-    x_mu[0] = (float)x.R - mu.Rf;
-    x_mu[1] = (float)x.G - mu.Gf;
-    x_mu[2] = (float)x.B - mu.Bf;
+    x_mu[0] = ((float)x.R - mu.Rf);
+    if (x_mu[0] < 0)
+        x_mu[0] = -x_mu[0];
 
-    double expPower = x_mu[0] * (inver[0][0] * x_mu[0] + inver[0][1] * x_mu[1] + inver[0][2] * x_mu[2])
-                    + x_mu[1] * (inver[1][0] * x_mu[0] + inver[1][1] * x_mu[1] + inver[1][2] * x_mu[2])
-                    + x_mu[2] * (inver[2][0] * x_mu[0] + inver[2][1] * x_mu[1] + inver[2][2] * x_mu[2]);
-    expPower = sqrt(expPower);
+    x_mu[1] = ((float)x.G - mu.Gf);
+    if (x_mu[1] < 0)
+        x_mu[1] = -x_mu[1];
 
-    return (expPower < k * k * k * det3Rt) ? true : false;
+    x_mu[2] = ((float)x.B - mu.Bf);
+    if (x_mu[2] < 0)
+        x_mu[2] = -x_mu[2];
+
+    double expPower = x_mu[0] + x_mu[1] + x_mu[2];
+
+    return (expPower < k * k * k * detSqrt) ? true : false;
 }
 
 void Gaussian::finalize()
@@ -612,68 +638,26 @@ void Gaussian::finalize()
         mu.Rf += iter.R;
         mu.Gf += iter.G;
         mu.Bf += iter.B;
-
-        sigma[0][0] += iter.R * iter.R;
-        sigma[0][1] += iter.R * iter.G;
-        sigma[0][2] += iter.R * iter.B;
-
-        sigma[1][1] += iter.G * iter.G;
-        sigma[1][2] += iter.G * iter.B;
-
-        sigma[2][2] += iter.B * iter.B;
     }
-
     mu.Rf /= size; mu.Gf /= size; mu.Bf /= size;
 
-    sigma[0][0] /= size; sigma[0][1] /= size; sigma[0][2] /= size;
-                         sigma[1][1] /= size; sigma[1][2] /= size;
-                                              sigma[2][2] /= size;
-
-    // - Средние
-    sigma[0][0] -= (mu.Rf * mu.Rf);
-    sigma[0][1] -= (mu.Rf * mu.Gf);
-    sigma[0][2] -= (mu.Rf * mu.Bf);
-
-    sigma[1][1] -= (mu.Gf * mu.Gf);
-    sigma[1][2] -= (mu.Gf * mu.Bf);
-
-    sigma[2][2] -= (mu.Bf * mu.Bf);
-
-    // Копируем верхний триугольник на нижний триугольник
-    sigma[1][0] = sigma[0][1];
-    sigma[2][0] = sigma[0][2]; sigma[2][1] = sigma[1][2];
+    foreach (RgbColor iter, points) {
+        sigma[0][0] += (iter.R - mu.Rf) * (iter.R - mu.Rf);
+        sigma[1][1] += (iter.G - mu.Gf) * (iter.G - mu.Gf);
+        sigma[2][2] += (iter.B - mu.Bf) * (iter.B - mu.Bf);
+    }
+    sigma[0][0] /= size; sigma[1][1] /= size; sigma[2][2] /= size;
 
     if (sigma[0][0] < sigmamin)
-        sigma[0][0] += sigmamin;
+        sigma[0][0] = sigmamin;
     if (sigma[1][1] < sigmamin)
-        sigma[1][1] += sigmamin;
+        sigma[1][1] = sigmamin;
     if (sigma[2][2] < sigmamin)
-        sigma[2][2] += sigmamin;
+        sigma[2][2] = sigmamin;
 
-    inver[0][0] = sigma[1][1] * sigma[2][2] - sigma[1][2] * sigma[2][1];
-    inver[1][0] = sigma[1][2] * sigma[2][0] - sigma[1][0] * sigma[2][2];
-    inver[2][0] = sigma[1][0] * sigma[2][1] - sigma[1][1] * sigma[2][0];
+    inver[0][0] = 1. / sigma[0][0]; inver[1][1] = 1. / sigma[1][1]; inver[2][2] = 1. / sigma[2][2];
 
-    inver[1][1] = sigma[0][0] * sigma[2][2] - sigma[0][2] * sigma[2][0];
-    inver[2][1] = sigma[0][1] * sigma[2][0] - sigma[0][0] * sigma[2][1];
-
-    inver[2][2] = sigma[0][0] * sigma[1][1] - sigma[0][1] * sigma[1][0];
-
-    det = sigma[0][0] * inver[0][0] + sigma[0][1] * inver[0][1]
-        + sigma[0][2] * inver[0][2];
-
-    inver[0][0] /= det; inver[1][0] /= det; inver[2][0] /= det;
-                        inver[1][1] /= det; inver[2][1] /= det;
-                                            inver[2][2] /= det;
-
-    inver[0][1] = inver[1][0];
-    inver[0][2] = inver[2][0]; inver[1][2] = inver[2][1];
-
-    if (det < 0)
-        det = -det;
-
-    det3Rt = exp(1./3 * log(det));
-
+    det = sigma[0][0] + sigma[1][1] + sigma[2][2];
     detSqrt = sqrt(det);
 
     isNotFinalized = false;
