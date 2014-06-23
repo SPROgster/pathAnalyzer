@@ -6,9 +6,11 @@
 #include <QVector>
 
 #include "morphology.h"
+#include "components.h"
 
 #define k 3
 #define rho 0.01
+#define QueueLength 25
 const qint64 fps = 20;
 
 struct RgbColor
@@ -83,6 +85,10 @@ public:
 
     QList<QImage *>* createBorders();
     void applyBorders();
+
+    void getCentresOfMass();
+
+    QList<xy> centresOfMass;
 
 private:
     Ui::MainWindow *ui;

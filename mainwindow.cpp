@@ -6,6 +6,7 @@
 #include <QTest>
 #include <QMessageBox>
 #include <QPainter>
+#include <QQueue>
 
 #include "mainwindow.h"
 #include "ui_mainwindow.h"
@@ -94,6 +95,7 @@ void MainWindow::play()
 void MainWindow::recognize()
 {
     substractBackground();
+    getCentresOfMass();
     applyBorders();
     foreach (QImage* iter, imageList)
     {
@@ -212,8 +214,8 @@ void MainWindow::substractBackground()
 
     masks << mask;
 
-    QImage* blackDisk = disk(6, 0xFF000000);
-    QImage* whiteDisk = disk(6, 0xFFFFFFFF);
+    QImage* blackDisk = disk(4, 0xFF000000);
+    QImage* whiteDisk = disk(4, 0xFFFFFFFF);
 
     for (; image != imageList.end(); image++)
     {
@@ -423,6 +425,9 @@ QList<QImage*>* MainWindow::createBorders()
 
 void MainWindow::applyBorders()
 {
+    QList <xy> centres;
+    centres.reserve(QueueLength);
+
     foreach (QImage* iter, imagesWithMasks)
     {
         delete iter;
@@ -432,14 +437,37 @@ void MainWindow::applyBorders()
 
     QList<QImage*> *borders = createBorders();
 
+    QPen trajPen(QColor(Qt::red));
+
     for (int i = 0; i < borders->size(); i++)
     {
         QImage* iter = borders->at(i);
         QImage* image = new QImage(*imageList[i]);
+        xy centre = centresOfMass[i];
+
+        if (centre.x > 0)
+        {
+            if (centres.size() == QueueLength)
+            {
+                centres.removeFirst();
+            }
+            centres << centre;
+        }
 
         QPainter paint;
         paint.begin(image);
         paint.drawImage(0, 0, *iter);
+
+        // Рисование траекторий
+        paint.setPen(trajPen);
+        if (centres.size() > 1)
+            for (QList<xy>::iterator iter = centres.begin() + 1, iter1 = centres.begin();
+                 iter != centres.end(); iter++, iter1++)
+            {
+                paint.drawLine(iter1->x, iter1->y, iter->x, iter->y);
+                paint.drawRect(iter->x - 2, iter->y - 2, 4, 4);
+            }
+
         paint.end();
 
         imagesWithMasks << image;
@@ -448,6 +476,50 @@ void MainWindow::applyBorders()
     }
     borders->clear();
     delete borders;
+}
+
+void MainWindow::getCentresOfMass()
+{
+    centresOfMass.clear();
+    centresOfMass.reserve(masks.size());
+
+    QImage* firstFrame = masks[0];
+
+    int imageWidth = firstFrame->width();
+    int imageHeight= firstFrame->height();
+
+    foreach (QImage* iter, masks)
+    {
+        xy center;
+        center.x = 0;
+        center.y = 0;
+
+        uchar* pixel = iter->bits();
+        int count = 0;
+        for (int y = 0; y < imageHeight; y++)
+            for (int x = 0; x < imageWidth; x++, pixel++)
+            {
+                if (*pixel)
+                {
+                    count++;
+                    center.x += x;
+                    center.y += y;
+                }
+            }
+
+        if (count)
+        {
+            center.x /= count;
+            center.y /= count;
+        }
+        else
+        {
+            center.x = -1;
+            center.y = -1;
+        }
+
+        centresOfMass << center;
+    }
 }
 
 void MainWindow::fillBackg(int n)
