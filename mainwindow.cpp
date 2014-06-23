@@ -5,9 +5,11 @@
 #include <QDateTime>
 #include <QTest>
 #include <QMessageBox>
+#include <QPainter>
 
 #include "mainwindow.h"
 #include "ui_mainwindow.h"
+#include "components.h"
 
 MainWindow::MainWindow(QWidget *parent) :
     QMainWindow(parent),
@@ -92,7 +94,7 @@ void MainWindow::play()
 void MainWindow::recognize()
 {
     substractBackground();
-    applyMasks();
+    applyBorders();
     foreach (QImage* iter, imageList)
     {
         delete iter;
@@ -210,8 +212,8 @@ void MainWindow::substractBackground()
 
     masks << mask;
 
-    QImage* blackDisk = disk(2, 0xFF000000);
-    QImage* whiteDisk = disk(4, 0xFFFFFFFF);
+    QImage* blackDisk = disk(6, 0xFF000000);
+    QImage* whiteDisk = disk(6, 0xFFFFFFFF);
 
     for (; image != imageList.end(); image++)
     {
@@ -371,6 +373,81 @@ void MainWindow::applyMasks()
         image->setAlphaChannel(*(masks[i]));
         imagesWithMasks << image;
     }
+}
+
+QList<QImage*>* MainWindow::createBorders()
+{
+    QList<QImage*>* borders = new QList<QImage*>;
+    borders->reserve(masks.size());
+
+    QImage* temp;
+    QImage* firstFrame = masks[0];
+    int imageWidth = firstFrame->width();
+    int imageHeight= firstFrame->height();
+
+    QVector<QRgb> borderColorMask;
+    borderColorMask << 0x00000000;
+    borderColorMask << 0xFFFF0000;
+
+    foreach (QImage* iter, masks)
+    {
+        temp = new QImage(imageWidth, imageHeight, QImage::Format_Indexed8);
+        temp->setColorTable(borderColorMask);
+        temp->fill(0);
+
+        if (xy* croped = crop(*iter))
+        {
+            uchar* pixel1 = temp->scanLine(croped[0].y) + croped[0].x;
+            uchar* pixel2 = temp->scanLine(croped[1].y) + croped[0].x;
+
+            for (int x = croped[0].x; x <= croped[1].x; x++, pixel1++, pixel2++)
+            {
+                *pixel1 = 1; *pixel2 = 1;
+            }
+
+            pixel1 = temp->scanLine(croped[0].y) + croped[0].x;
+            pixel2 = temp->scanLine(croped[0].y) + croped[1].x;
+
+            for (int y = croped[0].y; y <= croped[1].y; y++, pixel1 += imageWidth, pixel2 += imageWidth)
+            {
+                *pixel1 = 1; *pixel2 = 1;
+            }
+
+            delete [] croped;
+        }
+
+        *borders << temp;
+    }
+    return borders;
+}
+
+void MainWindow::applyBorders()
+{
+    foreach (QImage* iter, imagesWithMasks)
+    {
+        delete iter;
+    }
+    imagesWithMasks.clear();
+    imagesWithMasks.reserve(masks.size());
+
+    QList<QImage*> *borders = createBorders();
+
+    for (int i = 0; i < borders->size(); i++)
+    {
+        QImage* iter = borders->at(i);
+        QImage* image = new QImage(*imageList[i]);
+
+        QPainter paint;
+        paint.begin(image);
+        paint.drawImage(0, 0, *iter);
+        paint.end();
+
+        imagesWithMasks << image;
+
+        delete iter;
+    }
+    borders->clear();
+    delete borders;
 }
 
 void MainWindow::fillBackg(int n)

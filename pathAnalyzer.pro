@@ -13,9 +13,11 @@ TEMPLATE = app
 
 SOURCES += main.cpp\
         mainwindow.cpp \
-    morphology.cpp
+    morphology.cpp \
+    components.cpp
 
 HEADERS  += mainwindow.h \
-    morphology.h
+    morphology.h \
+    components.h
 
 FORMS    += mainwindow.ui

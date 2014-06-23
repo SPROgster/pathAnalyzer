@@ -81,6 +81,8 @@ public:
     void substractBackground2();
     void applyMasks();
 
+    QList<QImage *>* createBorders();
+    void applyBorders();
 
 private:
     Ui::MainWindow *ui;
