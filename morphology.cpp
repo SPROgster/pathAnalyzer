@@ -26,7 +26,7 @@ QImage* disk(int radius, QRgb color)
     return disk;
 }
 
-void dilation(QImage* &origin, const QImage &element, const QRgb pixelColor, const QRgb background)
+void dilation(QImage* origin, const QImage &element, const QRgb pixelColor, const QRgb background)
 {
     int width       = origin->width(),
         height      = origin->height(),
@@ -50,8 +50,8 @@ void dilation(QImage* &origin, const QImage &element, const QRgb pixelColor, con
 
     QRgb* pixel = (QRgb*)origin->bits();
 
-    for (int x = 0; x < width; x++)
-        for (int y = 0; y < height; y++, pixel++)
+    for (int y = 0; y < height; y++)
+        for (int x = 0; x < width; x++, pixel++)
         {
             // Проверяем, пиксель
             if (*pixel == pixelColor)
@@ -67,6 +67,7 @@ void dilation(QImage* &origin, const QImage &element, const QRgb pixelColor, con
     else
         *delationResult = delationResult->convertToFormat(origFormat);
 
-    delete origin;
-    origin = delationResult;
+    *origin = *delationResult;
+
+    delete delationResult;
 }

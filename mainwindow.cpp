@@ -55,7 +55,8 @@ void MainWindow::openImages()
         int i = 0;
         foreach (iter, fileNames)
         {
-            progress.setValue(i);
+            if (i % 10 == 0)
+                progress.setValue(i);
             QImage* image = new QImage;
             if (image->load(iter))
             {
@@ -209,12 +210,15 @@ void MainWindow::substractBackground()
 
     masks << mask;
 
-    /*QImage* blackDisk = disk(3, 0xFF000000);
-    QImage* whiteDisk = disk(3, 0xFF000000);*/
+    QImage* blackDisk = disk(2, 0xFF000000);
+    QImage* whiteDisk = disk(4, 0xFFFFFFFF);
 
     for (; image != imageList.end(); image++)
     {
-        progress.setValue(prog++);
+        if (prog++ % 10 == 0)
+        {
+            progress.setValue(prog);
+        }
 
         mask = new QImage(width, height, QImage::Format_Indexed8);
         mask->setColorTable(maskColorTable);
@@ -227,10 +231,11 @@ void MainWindow::substractBackground()
             *maskPixel = (backg[i]->isBackground(*imagePixel)) ? 0 : 1;
         }
 
-        //dilation(mask, *blackDisk, 0xFF000000, 0xFFFFFFFF);
-        //dilation(mask, *whiteDisk, 0xFFFFFFFF, 0xFF000000);
+        // Размыкание
+        dilation(mask, *blackDisk, 0xFF000000, 0xFFFFFFFF);
+        dilation(mask, *whiteDisk, 0xFFFFFFFF, 0xFF000000);
 
-        ui->imageView->setPixmap(QPixmap::fromImage(*mask));
+        //ui->imageView->setPixmap(QPixmap::fromImage(*mask));
         //QMessageBox(QMessageBox::NoIcon, "Отладка", QString("%1 %2").arg(j).arg(d_max)).exec();
 
         masks << mask;
@@ -239,10 +244,8 @@ void MainWindow::substractBackground()
             break;
     }
 
-    return;
-
-    //delete blackDisk;
-    //delete whiteDisk;
+    delete blackDisk;
+    delete whiteDisk;
 }
 
 void MainWindow::substractBackground2()
@@ -542,7 +545,7 @@ void MainWindow::convertToGrayscale(QImage &image)
 /////////////////////////////////////////////////////////////////////////////////
 
 Gaussian::Gaussian(float _sirmamin, bool fullMatrix, bool hsv) :
-    usingFullMastrix(fullMatrix), usingHsv(hsv)
+    usingRealTime(false), usingFullMastrix(fullMatrix), usingHsv(hsv)
 {
     sigmamin = _sirmamin;
     isNotFinalized = true;
@@ -570,6 +573,44 @@ void Gaussian::addItem(QRgb x_)
     points << x;
     isNotFinalized = true;
 }
+/*
+void Gaussian::addItemMix(QRgb x_)
+{
+    // Реализация для смешивания
+    RgbColor x;
+    if (usingHsv)
+    {
+        QColor hsv(x_);
+
+        x.R = hsv.hsvHue();
+        x.G = hsv.hsvSaturation();
+        x.B = hsv.value();
+    }
+    else
+    {
+        x.B = x_ & 0xFF;
+        x_ >>= 8;
+        x.G = x_ & 0xFF;
+        x_ >>= 8;
+        x.R = x_ & 0xFF;
+    }
+
+    if (!usingRealTime)
+    {
+        usingRealTime = true;
+        mu.R = x.R;
+        mu.G = x.G;
+        mu.B = x.B;
+
+        memset(&sigma, 0, sizeof(sigma));
+        memset(&inver, 0, sizeof(inver));
+
+
+    }
+
+
+
+}*/
 
 float Gaussian::p(uchar x)
 {
